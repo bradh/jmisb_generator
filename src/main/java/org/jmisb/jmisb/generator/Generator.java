@@ -21,6 +21,7 @@ import org.jmisb.api.klv.st0102.localset.CcMethod;
 import org.jmisb.api.klv.st0102.localset.ClassificationLocal;
 import org.jmisb.api.klv.st0102.localset.OcMethod;
 import org.jmisb.api.klv.st0102.localset.SecurityMetadataLocalSet;
+import org.jmisb.api.klv.st0601.CountryCodes;
 import org.jmisb.api.klv.st0601.FrameCenterElevation;
 import org.jmisb.api.klv.st0601.FrameCenterLatitude;
 import org.jmisb.api.klv.st0601.FrameCenterLongitude;
@@ -100,8 +101,8 @@ public class Generator {
     private final double sensorAltitude = 1258.3;
     private final double slantRange = 2000.0;
     private final String missionId = "IntTesting";
-    private final byte version0601 = 9; // Last version supported by CMITT 1.3.0
-    private final byte version0102 = 11;
+    private final byte version0601 = 16; // Last version supported by CMITT 1.3.0 is 9
+    private final byte version0102 = 12; 
     private final String filename = "generator_output.mpeg";
         
     private static final Logger LOG = LoggerFactory.getLogger(Generator.class);
@@ -130,6 +131,7 @@ public class Generator {
             }
 
             final long numFrames = duration * Math.round(frameRate);
+            final long switchingValue = numFrames / 6; 
             double pts = 1000.0 * System.currentTimeMillis(); // Close enough for this.
             for (long i = 0; i < numFrames; ++i)
             {
@@ -149,8 +151,8 @@ public class Generator {
                 values.put(UasDatalinkTag.SensorTrueAltitude, new SensorTrueAltitude(sensorAltitude));
 
                 values.put(UasDatalinkTag.PlatformHeadingAngle, new PlatformHeadingAngle(10.0));
-                values.put(UasDatalinkTag.PlatformPitchAngle, new PlatformPitchAngle(1.0));
-                values.put(UasDatalinkTag.PlatformRollAngle, new PlatformRollAngle(-1.0));
+                values.put(UasDatalinkTag.PlatformPitchAngle, new PlatformPitchAngle(1.0 * (i / switchingValue)));
+                values.put(UasDatalinkTag.PlatformRollAngle, new PlatformRollAngle(-1.0 * (i / switchingValue)));
 
                 values.put(UasDatalinkTag.SensorRelativeAzimuthAngle, new SensorRelativeAzimuth(330.0));
                 values.put(UasDatalinkTag.SensorRelativeElevationAngle, new SensorRelativeElevation(-70.0));
@@ -166,8 +168,12 @@ public class Generator {
                 values.put(UasDatalinkTag.FrameCenterLongitude, new FrameCenterLongitude(149.08939));
                 values.put(UasDatalinkTag.FrameCenterElevation, new FrameCenterElevation(12.0));
 
-                values.put(UasDatalinkTag.SecurityLocalMetadataSet, new NestedSecurityMetadata(getSecurityLs()));
-
+                values.put(UasDatalinkTag.SecurityLocalMetadataSet, new NestedSecurityMetadata(getSecurityLs(i/switchingValue)));
+                if ((i / switchingValue) % 2 == 0) {
+                    values.put(UasDatalinkTag.CountryCodes, new CountryCodes(CountryCodingMethod.GENC_THREE_LETTER, "CAN", "", "FRA"));
+                } else {
+                    values.put(UasDatalinkTag.CountryCodes, new CountryCodes(CountryCodingMethod.ISO3166_THREE_LETTER, "AUS", "CAN", "NZL"));
+                }
                 values.put(UasDatalinkTag.VmtiLocalDataSet, new NestedVmtiLocalSet(getVmtiLocalSet()));
                 UasDatalinkMessage message = new UasDatalinkMessage(values);
 
@@ -182,18 +188,22 @@ public class Generator {
         }
     }
     
-    private SecurityMetadataLocalSet getSecurityLs()
+    private SecurityMetadataLocalSet getSecurityLs(long i)
     {
         SortedMap<SecurityMetadataKey, ISecurityMetadataValue> values = new TreeMap<>();
         values.put(SecurityMetadataKey.SecurityClassification, new ClassificationLocal(Classification.UNCLASSIFIED));
 
         values.put(SecurityMetadataKey.CcCodingMethod, new CcMethod(CountryCodingMethod.ISO3166_TWO_LETTER));
-        values.put(SecurityMetadataKey.ClassifyingCountry, new SecurityMetadataString("//AU"));
+        values.put(SecurityMetadataKey.ClassifyingCountry, new SecurityMetadataString(SecurityMetadataString.CLASSIFYING_COUNTRY, "//AU"));
 
-        //values.put(SecurityMetadataKey.OcCodingMethod, new OcMethod(CountryCodingMethod.ISO3166_TWO_LETTER));
-        values.put(SecurityMetadataKey.OcCodingMethod, new OcMethod(CountryCodingMethod.GENC_TWO_LETTER));
-        values.put(SecurityMetadataKey.ObjectCountryCodes, new ObjectCountryCodeString("US"));
-        values.put(SecurityMetadataKey.SciShiInfo, new SecurityMetadataString(""));
+        if (i % 2 == 0) {
+            values.put(SecurityMetadataKey.OcCodingMethod, new OcMethod(CountryCodingMethod.GENC_TWO_LETTER));
+            values.put(SecurityMetadataKey.ObjectCountryCodes, new ObjectCountryCodeString("US"));
+        } else {
+            values.put(SecurityMetadataKey.OcCodingMethod, new OcMethod(CountryCodingMethod.ISO3166_TWO_LETTER));
+            values.put(SecurityMetadataKey.ObjectCountryCodes, new ObjectCountryCodeString("AU,NZ"));
+        }
+        values.put(SecurityMetadataKey.SciShiInfo, new SecurityMetadataString(SecurityMetadataString.SCI_SHI_INFO, ""));
 
         values.put(SecurityMetadataKey.Version, new ST0102Version(version0102));
 
@@ -203,15 +213,15 @@ public class Generator {
     private VmtiLocalSet getVmtiLocalSet() {
         VTargetSeries vmtiTargets = getVmtiTargets();
         Map<VmtiMetadataKey, IVmtiMetadataValue> values = new TreeMap<>();
-        // values.put(VmtiMetadataKey.VersionNumber, new ST0903Version(5));
-        values.put(VmtiMetadataKey.VersionNumber, new ST0903Version(4));
+        values.put(VmtiMetadataKey.VersionNumber, new ST0903Version(5));
+        // values.put(VmtiMetadataKey.VersionNumber, new ST0903Version(4));
         values.put(VmtiMetadataKey.NumberOfReportedTargets, new VmtiReportedTargetCount(vmtiTargets.getVTargets().size()));
         values.put(VmtiMetadataKey.TotalTargetsInFrame, new VmtiTotalTargetCount(vmtiTargets.getVTargets().size()));
         values.put(VmtiMetadataKey.SystemName, new VmtiTextString(VmtiTextString.SYSTEM_NAME, "Jericho Test 1"));
         values.put(VmtiMetadataKey.SourceSensor, new VmtiTextString(VmtiTextString.SOURCE_SENSOR, "WideScope"));
         values.put(VmtiMetadataKey.FrameWidth, new FrameWidth(1024));
         values.put(VmtiMetadataKey.FrameHeight, new FrameHeight(768));
-        // values.put(VmtiMetadataKey.AlgorithmSeries, new AlgorithmSeries(getAlgorithms()));
+        values.put(VmtiMetadataKey.AlgorithmSeries, new AlgorithmSeries(getAlgorithms()));
         values.put(VmtiMetadataKey.VTargetSeries, vmtiTargets);
         return new VmtiLocalSet(values);
     }
@@ -224,7 +234,7 @@ public class Generator {
         targetData.put(VTargetMetadataKey.FPAIndex, new FpaIndex(new FpaIndexPack((short)1, (short)1)));
         targetData.put(VTargetMetadataKey.BoundaryTopLeft, new BoundaryTopLeft(280L*1024 + 360));
         targetData.put(VTargetMetadataKey.BoundaryBottomRight, new BoundaryBottomRight(320L*1024 + 440));
-        // targetData.put(VTargetMetadataKey.AlgorithmId, new AlgorithmId(0));
+        targetData.put(VTargetMetadataKey.AlgorithmId, new AlgorithmId(0));
         targetData.put(VTargetMetadataKey.VTracker, getVTracker());
         VTargetPack targetPack = new VTargetPack(1,targetData);
         values.add(targetPack);
@@ -252,7 +262,7 @@ public class Generator {
         Map<VTrackerMetadataKey, IVmtiMetadataValue> map = new TreeMap<>();
         map.put(VTrackerMetadataKey.detectionStatus, new DetectionStatus((byte)0x01));
         // TODO: add later.
-        // map.put(VTrackerMetadataKey.algorithmId, new AlgorithmId(1));
+        map.put(VTrackerMetadataKey.algorithmId, new AlgorithmId(1));
         VTrackerLS trackerLS = new VTrackerLS(map);
         return new VTracker(trackerLS);
     }
